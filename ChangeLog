@@ -1,3 +1,6 @@
+2026.184:
+	- Add gzip HTTP content encoding support for status endpoints.
+
 2026.181: v4.5.3
 	- Use network I/O timeout (when configured) for PROXYv2 header timeout instead of
 	of a hard coded 3 seconds.  Fallback to 10 seconds when timeout is disabled.

@@ -30,6 +30,7 @@
 #include "clients.h"
 #include "dlclient.h"
 #include "generic.h"
+#include "gzip.h"
 #include "http.h"
 #include "infojson.h"
 #include "logging.h"
@@ -40,6 +41,9 @@
 #include "yyjson.h"
 
 #define DASHNULL(x) ((x) ? (x) : "-")
+
+/* Minimum response size before gzip compression is attempted. */
+#define HTTP_GZIP_MIN_BYTES 1024
 
 typedef enum
 {
@@ -85,6 +89,8 @@ static int NegotiateWebSocket (ClientInfo *cinfo, char *version,
                                char *secWebSocketKeyHeader, char *secWebSocketVersionHeader,
                                char *secWebSocketProtocolHeader);
 static bool http_header_has_token (const char *value, const char *token);
+static void MaybeGzip (const char *accept_encoding, char **response,
+                       int *responsebytes, const char **extra);
 static int apr_base64_encode_binary (char *encoded, const unsigned char *string, int len);
 static int sha1digest (uint8_t *digest, char *hexdigest, const uint8_t *data, size_t databytes);
 
@@ -144,6 +150,41 @@ urldecode (char *dst, const char *src)
 } /* End of urldecode() */
 
 /***************************************************************************
+ * MaybeGzip:
+ *
+ * Swap *response for a gzipped copy when the client accepts gzip and it
+ * actually shrinks the payload. On any failure/non-benefit, leaves the
+ * identity response untouched. Sets *extra to header lines to emit.
+ ***************************************************************************/
+static void
+MaybeGzip (const char *accept_encoding, char **response,
+           int *responsebytes, const char **extra)
+{
+  *extra = NULL;
+
+  if (*responsebytes < HTTP_GZIP_MIN_BYTES)
+    return;
+  if (!http_header_has_token (accept_encoding, "gzip"))
+    return;
+
+  char *gz     = NULL;
+  size_t gzlen = 0;
+  if (gzip_compress (*response, (size_t)*responsebytes, &gz, &gzlen) != 0)
+    return;
+
+  if (gzlen >= (size_t)*responsebytes) /* no benefit */
+  {
+    free (gz);
+    return;
+  }
+
+  free (*response);
+  *response      = gz;
+  *responsebytes = (int)gzlen;
+  *extra         = "Content-Encoding: gzip\r\nVary: Accept-Encoding\r\n";
+} /* End of MaybeGzip() */
+
+/***************************************************************************
  * HandleHTTP:
  *
  * Handle HTTP requests using an extremely limited HTTP server
@@ -180,6 +221,7 @@ HandleHTTP (char *recvbuffer, ClientInfo *cinfo)
   char secWebSocketKeyHeader[100]      = "";
   char secWebSocketVersionHeader[100]  = "";
   char secWebSocketProtocolHeader[100] = "";
+  char acceptEncodingHeader[100]       = "";
 
   MediaType type = RAW;
   char *response = NULL;
@@ -366,6 +408,10 @@ HandleHTTP (char *recvbuffer, ClientInfo *cinfo)
     {
       STORE_HEADER_VALUE (secWebSocketProtocolHeader, value, "Sec-WebSocket-Protocol");
     }
+    else if (!strcasecmp (cinfo->recvbuf, "Accept-Encoding"))
+    {
+      STORE_HEADER_VALUE (acceptEncodingHeader, value, "Accept-Encoding");
+    }
   }
 #undef STORE_HEADER_VALUE
 
@@ -396,7 +442,9 @@ HandleHTTP (char *recvbuffer, ClientInfo *cinfo)
     /* Create header */
     if (responsebytes > 0)
     {
-      headlen = GenerateHeader (cinfo, 200, type, (uint64_t)responsebytes, NULL, NULL);
+      const char *extra = NULL;
+      MaybeGzip (acceptEncodingHeader, &response, &responsebytes, &extra);
+      headlen = GenerateHeader (cinfo, 200, type, (uint64_t)responsebytes, NULL, extra);
     }
     else if (responsebytes == 0)
     {
@@ -433,7 +481,9 @@ HandleHTTP (char *recvbuffer, ClientInfo *cinfo)
     /* Create header */
     if (responsebytes > 0)
     {
-      headlen = GenerateHeader (cinfo, 200, type, (uint64_t)responsebytes, NULL, NULL);
+      const char *extra = NULL;
+      MaybeGzip (acceptEncodingHeader, &response, &responsebytes, &extra);
+      headlen = GenerateHeader (cinfo, 200, type, (uint64_t)responsebytes, NULL, extra);
     }
     else if (responsebytes == 0)
     {
@@ -483,7 +533,9 @@ HandleHTTP (char *recvbuffer, ClientInfo *cinfo)
     /* Create header */
     if (responsebytes > 0)
     {
-      headlen = GenerateHeader (cinfo, 200, type, (uint64_t)responsebytes, NULL, NULL);
+      const char *extra = NULL;
+      MaybeGzip (acceptEncodingHeader, &response, &responsebytes, &extra);
+      headlen = GenerateHeader (cinfo, 200, type, (uint64_t)responsebytes, NULL, extra);
     }
     else if (responsebytes == 0)
     {
@@ -535,7 +587,9 @@ HandleHTTP (char *recvbuffer, ClientInfo *cinfo)
     /* Create header */
     if (responsebytes > 0)
     {
-      headlen = GenerateHeader (cinfo, 200, type, (uint64_t)responsebytes, NULL, NULL);
+      const char *extra = NULL;
+      MaybeGzip (acceptEncodingHeader, &response, &responsebytes, &extra);
+      headlen = GenerateHeader (cinfo, 200, type, (uint64_t)responsebytes, NULL, extra);
     }
     else if (responsebytes == 0)
     {
@@ -1267,16 +1321,16 @@ GenerateID (ClientInfo *cinfo, const char *path, char **response, MediaType *typ
     }
 
     responsebytes = AllocPrintf (response,
-                              "%s\n"
-                              "Organization: %s\n"
-                              "Server start: %s\n"
-                              "DataLink protocols: %s\n"
-                              "SeedLink protocols: %s\n",
-                              DASHNULL (yyjson_get_str (yyjson_obj_get (root, "software"))),
-                              DASHNULL (yyjson_get_str (yyjson_obj_get (root, "organization"))),
-                              DASHNULL (yyjson_get_str (yyjson_obj_get (root, "server_start"))),
-                              (datalink_protocols[0] != '\0') ? datalink_protocols : "NONE",
-                              (seedlink_protocols[0] != '\0') ? seedlink_protocols : "NONE");
+                                 "%s\n"
+                                 "Organization: %s\n"
+                                 "Server start: %s\n"
+                                 "DataLink protocols: %s\n"
+                                 "SeedLink protocols: %s\n",
+                                 DASHNULL (yyjson_get_str (yyjson_obj_get (root, "software"))),
+                                 DASHNULL (yyjson_get_str (yyjson_obj_get (root, "organization"))),
+                                 DASHNULL (yyjson_get_str (yyjson_obj_get (root, "server_start"))),
+                                 (datalink_protocols[0] != '\0') ? datalink_protocols : "NONE",
+                                 (seedlink_protocols[0] != '\0') ? seedlink_protocols : "NONE");
 
     yyjson_doc_free (json);
 
@@ -1366,9 +1420,9 @@ GenerateStreams (ClientInfo *cinfo, const char *path, const char *query,
     if ((stream_array = yyjson_obj_get (root, "stream")) != NULL &&
         (streamcount = yyjson_arr_size (stream_array)) > 0)
     {
-      char *buf   = NULL;
-      size_t len  = 0;
-      FILE *mem   = open_memstream (&buf, &len);
+      char *buf  = NULL;
+      size_t len = 0;
+      FILE *mem  = open_memstream (&buf, &len);
 
       if (!mem)
       {
@@ -1816,7 +1870,7 @@ GenerateConnections (ClientInfo *cinfo, const char *path, const char *query,
 {
   size_t clientcount = 0;
   char matchstr[50];
-  int matchlen      = 0;
+  int matchlen = 0;
 
   char *cp;
   int responsebytes = 0;
@@ -2237,9 +2291,9 @@ NegotiateWebSocket (ClientInfo *cinfo, char *version,
   if (!version || strcasecmp (version, "HTTP/1.1"))
   {
     responsebytes = AllocPrintf (&response,
-                              "HTTP Version Must Be 1.1 For WebSocket\n"
-                              "Received: '%s'\n",
-                              (version) ? version : "");
+                                 "HTTP Version Must Be 1.1 For WebSocket\n"
+                                 "Received: '%s'\n",
+                                 (version) ? version : "");
 
     if (responsebytes < 0)
     {
@@ -2270,9 +2324,9 @@ NegotiateWebSocket (ClientInfo *cinfo, char *version,
   if (!http_header_has_token (upgradeHeader, "websocket"))
   {
     responsebytes = AllocPrintf (&response,
-                              "Upgrade header must be 'websocket' For WebSocket\n"
-                              "Received: '%s'\n",
-                              (upgradeHeader) ? upgradeHeader : "");
+                                 "Upgrade header must be 'websocket' For WebSocket\n"
+                                 "Received: '%s'\n",
+                                 (upgradeHeader) ? upgradeHeader : "");
 
     if (responsebytes < 0)
     {
@@ -2303,9 +2357,9 @@ NegotiateWebSocket (ClientInfo *cinfo, char *version,
   if (!http_header_has_token (connectionHeader, "Upgrade"))
   {
     responsebytes = AllocPrintf (&response,
-                              "The Connection header value must be 'Upgrade'\n"
-                              "Received: '%s'\n",
-                              (connectionHeader) ? connectionHeader : "");
+                                 "The Connection header value must be 'Upgrade'\n"
+                                 "Received: '%s'\n",
+                                 (connectionHeader) ? connectionHeader : "");
 
     if (responsebytes < 0)
     {
@@ -2336,9 +2390,9 @@ NegotiateWebSocket (ClientInfo *cinfo, char *version,
   if (!secWebSocketVersionHeader || strcasecmp (secWebSocketVersionHeader, "13"))
   {
     responsebytes = AllocPrintf (&response,
-                              "The Sec-WebSocket-Version header must be '13'\n"
-                              "Received: '%s'\n",
-                              (secWebSocketVersionHeader) ? secWebSocketVersionHeader : "");
+                                 "The Sec-WebSocket-Version header must be '13'\n"
+                                 "Received: '%s'\n",
+                                 (secWebSocketVersionHeader) ? secWebSocketVersionHeader : "");
 
     if (responsebytes < 0)
     {
@@ -2369,7 +2423,7 @@ NegotiateWebSocket (ClientInfo *cinfo, char *version,
   if (!secWebSocketKeyHeader || !*secWebSocketKeyHeader)
   {
     responsebytes = AllocPrintf (&response,
-                              "The Sec-WebSocket-Key header is required\n");
+                                 "The Sec-WebSocket-Key header is required\n");
 
     if (responsebytes < 0)
     {
@@ -2423,11 +2477,11 @@ NegotiateWebSocket (ClientInfo *cinfo, char *version,
 
   /* Generate response completing the upgrade to WebSocket connection */
   responsebytes = AllocPrintf (&response,
-                            "Upgrade: websocket\r\n"
-                            "Connection: Upgrade\r\n"
-                            "%s"
-                            "Sec-WebSocket-Accept: %s\r\n",
-                            subprotocolheader, keybuf);
+                               "Upgrade: websocket\r\n"
+                               "Connection: Upgrade\r\n"
+                               "%s"
+                               "Sec-WebSocket-Accept: %s\r\n",
+                               subprotocolheader, keybuf);
 
   if (responsebytes < 0)
   {

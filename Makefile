@@ -1,29 +1,32 @@
-# Build environment can be configured the following
+# Build environment can be configured with the following
 # environment variables:
 #   CC : Specify the C compiler to use
 #   CFLAGS : Specify compiler options to use
 
-.PHONY: all clean
-all clean: pcre2 mxml libmseed mbedtls
-	$(MAKE) -C src $@
+SUBDIRS = pcre2 mxml libmseed mbedtls miniz
+BUILDDIRS = $(SUBDIRS) src
 
-.PHONY: pcre2
-pcre2:
-	$(MAKE) -C $@ $(MAKECMDGOALS)
+# Disallow combining 'clean' with build goals: each directory is
+# visited only once per invocation, so 'make clean all' would clean
+# but never build.
+ifneq ($(filter clean,$(MAKECMDGOALS)),)
+  ifneq ($(filter-out clean,$(MAKECMDGOALS)),)
+    $(error 'clean' must be run alone, e.g. 'make clean && make')
+  endif
+endif
 
-.PHONY: mxml
-mxml:
-	$(MAKE) -C $@ $(MAKECMDGOALS)
+.PHONY: all clean install $(BUILDDIRS)
 
-.PHONY: libmseed
-libmseed:
-	$(MAKE) -C $@ $(MAKECMDGOALS)
+all:   TARGET = all
+clean: TARGET = clean
+all clean: $(BUILDDIRS)
 
-.PHONY: mbedtls
-mbedtls:
-	$(MAKE) -C $@ $(MAKECMDGOALS)
+$(BUILDDIRS):
+	$(MAKE) -C $@ $(TARGET)
 
-.PHONY: install
+# The main program links against the vendored libs: build it last.
+src: $(SUBDIRS)
+
 install:
 	@echo
 	@echo "No install method"

@@ -8,17 +8,23 @@ BIN = ../ringserver
 
 SRCS = stack.c rbtree.c logging.c clients.c cmdtoken.c slclient.c dlclient.c \
        http.c dsarchive.c mseedscan.c generic.c ring.c ringserver.c \
-       config.c loadbuffer.c infojson.c infoxml.c tls.c auth.c proxyproto.c
+       config.c loadbuffer.c infojson.c infoxml.c tls.c auth.c proxyproto.c \
+       gzip.c
 OBJS = $(SRCS:.c=.o)
 
 MBEDTLS_OBJS = $(wildcard ../mbedtls/library/*.o)
+MINIZ_OBJS   = $(wildcard ../miniz/*.o)
 
 FEATURE_DEFS = -D_GNU_SOURCE -D_DARWIN_C_SOURCE \
                -D_REENTRANT -D_POSIX_PTHREAD_SEMANTICS
 
-INCLUDES = -I../libmseed -I../mxml -I../pcre2/src -I../mbedtls/include
+# Miniz build options — disable unused ZIP/stdio/time/zlib-compatible defines
+MINIZ_DEFS = -DMINIZ_NO_ARCHIVE_APIS -DMINIZ_NO_STDIO -DMINIZ_NO_TIME \
+             -DMINIZ_NO_ZLIB_COMPATIBLE_NAMES
 
-CFLAGS += -std=c11 $(FEATURE_DEFS) $(INCLUDES)
+INCLUDES = -I../libmseed -I../mxml -I../pcre2/src -I../mbedtls/include -I../miniz
+
+CFLAGS += -std=c11 $(FEATURE_DEFS) $(MINIZ_DEFS) $(INCLUDES)
 
 LDLIBS  = ../pcre2/libpcre2.a ../libmseed/libmseed.a ../mxml/libmxml.a -lpthread
 
@@ -27,8 +33,8 @@ LDLIBS  = ../pcre2/libpcre2.a ../libmseed/libmseed.a ../mxml/libmxml.a -lpthread
 
 all: $(BIN)
 
-$(BIN): $(OBJS) $(MBEDTLS_OBJS)
-	$(CC) $(CFLAGS) -o $(BIN) $(OBJS) $(MBEDTLS_OBJS) $(LDFLAGS) $(LDLIBS)
+$(BIN): $(OBJS) $(MBEDTLS_OBJS) $(MINIZ_OBJS)
+	$(CC) $(CFLAGS) -o $(BIN) $(OBJS) $(MBEDTLS_OBJS) $(MINIZ_OBJS) $(LDFLAGS) $(LDLIBS)
 
 clean:
 	rm -f $(OBJS) $(BIN)
