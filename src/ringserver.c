@@ -707,9 +707,12 @@ main (int argc, char *argv[])
                    (unsigned long int)ctp->td->td_id, strerror (errno));
         }
 
-        /* Free the ClientInfo structure stored at the prvtptr */
+        /* Free the ClientInfo structure stored at the prvtptr and destroy the streams_lock mutex */
         if (ctp->td->td_prvtptr)
+        {
+          pthread_mutex_destroy (&((ClientInfo *)ctp->td->td_prvtptr)->streams_lock);
           free (ctp->td->td_prvtptr);
+        }
 
         /* Free thread data structure */
         if (ctp->td)

@@ -7,6 +7,7 @@
 	- Cleanly handle empty config file lines.
 	- Reject path-traversal SID components in archive path substitution.
 	- Harden ring buffer loading against corrupted packet size fields.
+	- Destroy client streams_lock mutex in reaper to avoid resource leak.
 	- Update libmseed to v3.4.1.
 
 2026.181: v4.5.3
