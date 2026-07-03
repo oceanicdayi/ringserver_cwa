@@ -178,7 +178,7 @@ static const int monthdays_leap[] = {31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30,
 
 /* Check that a day-of-month is in a valid range */
 #define VALIDMONTHDAY(year, month, mday) \
-  (mday >= 0 && mday <= (LEAPYEAR (year) ? monthdays_leap[month - 1] : monthdays[month - 1]))
+  (mday >= 1 && mday <= (LEAPYEAR (year) ? monthdays_leap[month - 1] : monthdays[month - 1]))
 
 /* Check that a day-of-year is in a valid range */
 #define VALIDYEARDAY(year, yday) (yday >= 1 && yday <= (365 + (LEAPYEAR (year) ? 1 : 0)))
@@ -289,7 +289,7 @@ ms_sid2nslc_n (const char *sid, char *net, size_t netsize, char *sta, size_t sta
       next = ptr + 1;
       *ptr = '\0';
 
-      if (net)
+      if (net && netsize > 0)
       {
         strncpy (net, top, netsize - 1);
         net[netsize - 1] = '\0';
@@ -303,9 +303,9 @@ ms_sid2nslc_n (const char *sid, char *net, size_t netsize, char *sta, size_t sta
       next = ptr + 1;
       *ptr = '\0';
 
-      if (sta)
+      if (sta && stasize > 0)
       {
-        strncpy (sta, top, stasize);
+        strncpy (sta, top, stasize - 1);
         sta[stasize - 1] = '\0';
       }
 
@@ -317,21 +317,21 @@ ms_sid2nslc_n (const char *sid, char *net, size_t netsize, char *sta, size_t sta
       next = ptr + 1;
       *ptr = '\0';
 
-      if (loc)
+      if (loc && locsize > 0)
       {
-        strncpy (loc, top, locsize);
+        strncpy (loc, top, locsize - 1);
         loc[locsize - 1] = '\0';
       }
 
       top = next;
     }
     /* Channel */
-    if (*top && chan)
+    if (*top && chan && chansize > 0)
     {
       /* Map extended channel to SEED channel if possible, otherwise direct copy */
-      if (ms_xchan2seedchan (chan, top))
+      if (chansize < 4 || ms_xchan2seedchan (chan, top))
       {
-        strncpy (chan, top, chansize);
+        strncpy (chan, top, chansize - 1);
         chan[chansize - 1] = '\0';
       }
     }
@@ -667,7 +667,7 @@ utf8length_int (const char *str, int maxlength)
   int length = 0;
   int offset;
 
-  for (offset = 0; str[offset] && offset < maxlength; offset++)
+  for (offset = 0; offset < maxlength && str[offset]; offset++)
   {
     type = utf8d[(uint8_t)str[offset]];
     state = utf8d[256 + state * 16 + type];
@@ -1308,7 +1308,18 @@ ms_time2nstime_int (int year, int yday, int hour, int min, int sec, uint32_t nse
 
   days = (365 * (shortyear - 70) + intervening_leap_days + (yday - 1));
 
-  nstime = (nstime_t)(60 * (60 * ((nstime_t)24 * days + hour) + min) + sec) * NSTMODULUS + nsec;
+  nstime_t seconds = (nstime_t)(60 * (60 * ((nstime_t)24 * days + hour) + min) + sec);
+
+  /* Guard against int64 nanosecond overflow/underflow at the extremes of the
+   * representable range (roughly year 1678 .. mid-2262).  nsec is positive, so
+   * it only matters for the upper bound. */
+  if (seconds > (INT64_MAX - (nstime_t)nsec) / NSTMODULUS || seconds < INT64_MIN / NSTMODULUS)
+  {
+    ms_log (2, "Time (year %d, day %d) is beyond the representable nstime range\n", year, yday);
+    return NSTERROR;
+  }
+
+  nstime = seconds * NSTMODULUS + nsec;
 
   return nstime;
 } /* End of ms_time2nstime_int() */
@@ -1576,8 +1587,14 @@ ms_mdtimestr2nstime (const char *timestr)
   fields = sscanf (timestr, "%d%*[-,/:.]%d%*[-,/:.]%d%*[-,/:.Tt ]%d%*[-,/:.]%d%*[-,/:.]%d%lf",
                    &year, &mon, &mday, &hour, &min, &sec, &fsec);
 
-  /* Convert fractional seconds to nanoseconds */
-  if (fsec != 0.0)
+  /* Convert fractional seconds to nanoseconds.  Restrict to [0,1) so the
+   * double-to-uint32 conversion is well defined. */
+  if (fsec < 0.0 || fsec >= 1.0)
+  {
+    ms_log (2, "fractional second (%g) is out of range\n", fsec);
+    return NSTERROR;
+  }
+  else if (fsec != 0.0)
   {
     nsec = (uint32_t)(fsec * 1000000000.0 + 0.5);
   }
@@ -1681,8 +1698,14 @@ ms_seedtimestr2nstime (const char *seedtimestr)
   fields = sscanf (seedtimestr, "%d%*[-,:.]%d%*[-,:.Tt ]%d%*[-,:.]%d%*[-,:.]%d%lf", &year, &yday,
                    &hour, &min, &sec, &fsec);
 
-  /* Convert fractional seconds to nanoseconds */
-  if (fsec != 0.0)
+  /* Convert fractional seconds to nanoseconds.  Restrict to [0,1) so the
+   * double-to-uint32 conversion is well defined. */
+  if (fsec < 0.0 || fsec >= 1.0)
+  {
+    ms_log (2, "fractional second (%g) is out of range\n", fsec);
+    return NSTERROR;
+  }
+  else if (fsec != 0.0)
   {
     nsec = (uint32_t)(fsec * 1000000000.0 + 0.5);
   }
@@ -2024,19 +2047,20 @@ lmp_nanosleep (uint64_t nanoseconds)
 #if defined(LMP_WIN)
 
   /* SleepEx is limited to milliseconds */
-  SleepEx ((DWORD)(nanoseconds / 1e6), 1);
+  SleepEx ((DWORD)(nanoseconds / 1000000ULL), 1);
 
   return 0;
 #else
 
-  struct timespec treq, trem;
+  struct timespec treq;
+  struct timespec trem = {0};
 
-  treq.tv_sec = (time_t)(nanoseconds / 1e9);
-  treq.tv_nsec = (long)(nanoseconds - (uint64_t)treq.tv_sec * 1e9);
+  treq.tv_sec = (time_t)(nanoseconds / 1000000000ULL);
+  treq.tv_nsec = (long)(nanoseconds % 1000000000ULL);
 
   nanosleep (&treq, &trem);
 
-  return trem.tv_sec * 1e9 + trem.tv_nsec;
+  return (uint64_t)trem.tv_sec * 1000000000ULL + (uint64_t)trem.tv_nsec;
 
 #endif
 } /* End of lmp_nanosleep() */

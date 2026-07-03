@@ -64,6 +64,7 @@ parse_json (char *jsonstring, size_t length, LM_PARSED_JSON *parsed)
   yyjson_read_flag flg = YYJSON_READ_NOFLAG;
   yyjson_read_err err;
   yyjson_alc alc = {_priv_malloc, _priv_realloc, _priv_free, NULL};
+  int allocated = 0;
 
   /* Allocate parsed state if needed */
   if (!parsed)
@@ -77,6 +78,7 @@ parse_json (char *jsonstring, size_t length, LM_PARSED_JSON *parsed)
     {
       parsed->doc = NULL;
       parsed->mut_doc = NULL;
+      allocated = 1;
     }
   }
 
@@ -105,6 +107,11 @@ parse_json (char *jsonstring, size_t length, LM_PARSED_JSON *parsed)
   {
     ms_log (2, "%s() Cannot parse extra header JSON: %s\n", __func__,
             (err.msg) ? err.msg : "Unknown error");
+
+    /* Free the parse state only if it was allocated within this call */
+    if (allocated)
+      mseh_free_parsestate (&parsed);
+
     return NULL;
   }
 
@@ -357,7 +364,7 @@ mseh_get_ptr_r (const MS3Record *msr, const char *ptr, void *value, char type, u
   else if (type == 'i' && yyjson_is_int (extravalue))
   {
     if (value)
-      *((int64_t *)value) = unsafe_yyjson_get_int (extravalue);
+      *((int64_t *)value) = unsafe_yyjson_get_sint (extravalue);
   }
   else if (type == 'n' && yyjson_is_num (extravalue))
   {
@@ -366,7 +373,7 @@ mseh_get_ptr_r (const MS3Record *msr, const char *ptr, void *value, char type, u
   }
   else if (type == 's' && yyjson_is_str (extravalue))
   {
-    if (value)
+    if (value && maxlength > 0)
     {
       stringvalue = unsafe_yyjson_get_str (extravalue);
       strncpy ((char *)value, stringvalue, maxlength - 1);
@@ -609,7 +616,9 @@ mseh_set_ptr_r (MS3Record *msr, const char *ptr, void *value, char type,
   /* Serialized extra headers and free parse state if not being retained */
   if (parsestate == NULL)
   {
-    mseh_serialize (msr, &parsed);
+    /* Only serialize back into the record if the modification succeeded */
+    if (rv == true && mseh_serialize (msr, &parsed) < 0)
+      rv = false;
     mseh_free_parsestate (&parsed);
   }
   /* If changes were applied, the immutable form of the document is now invalid */
@@ -1369,11 +1378,15 @@ mseh_print (const MS3Record *msr, int indent)
       else if (extra[idx] == '}')
       {
         indent -= 2;
+        if (indent < 0)
+          indent = 0;
         ms_log (0, "\n%*s}", indent, "");
       }
       else if (extra[idx] == ']')
       {
         indent -= 2;
+        if (indent < 0)
+          indent = 0;
         ms_log (0, "\n%*s]", indent, "");
       }
       else

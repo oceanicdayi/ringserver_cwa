@@ -29,8 +29,8 @@ extern "C"
 {
 #endif
 
-#define LIBMSEED_VERSION "3.4.0"    //!< Library version
-#define LIBMSEED_RELEASE "2026.094" //!< Library release date
+#define LIBMSEED_VERSION "3.4.1"    //!< Library version
+#define LIBMSEED_RELEASE "2026.167" //!< Library release date
 
 /** @defgroup io-functions File and URL I/O */
 /** @defgroup miniseed-record Record Handling */
@@ -527,6 +527,10 @@ extern void ms3_printselections (const MS3Selections *selections);
  * fileoffset), or the location in a file (\a filename and \a
  * fileoffset).
  *
+ * The filename field is a pointer to the original file name passed to
+ * the library, not a copy.  The caller is responsible for ensuring that
+ * the file name remains valid for the lifetime of the record list.
+ *
  * A ::MS3Record is stored with and contains the bit flags, extra
  * headers, etc. for the record.
  *
@@ -543,7 +547,7 @@ typedef struct MS3RecordPtr
 {
   const char *bufferptr; //!< Pointer in buffer to record, NULL if not used
   FILE *fileptr;         //!< Pointer to open FILE containing record, NULL if not used
-  const char *filename;  //!< Pointer to file name containing record, NULL if not used
+  const char *filename;  //!< Pointer (borrowed) to file name containing record, NULL if not used
   int64_t fileoffset;    //!< Offset into file to record for \a fileptr or \a filename
   MS3Record *msr;        //!< Pointer to ::MS3Record for this record
   nstime_t endtime;      //!< End time of record, time of last sample
@@ -850,7 +854,7 @@ extern int64_t mstl3_writemseed (MS3TraceList *mstl, const char *mspath, int8_t 
 extern int libmseed_url_support (void);
 extern MS3FileParam *ms3_msfp_init (int64_t startoffset, int64_t endoffset, int fd);
 extern MS3FileParam *ms3_msfp_init_fd (int fd);
-/* Backwards compatibility alias for misnamed ms3_msfp_init_fd() */
+/** Backwards compatibility alias for misnamed ms3_msfp_init_fd() */
 #define ms3_mstl_init_fd(fd) ms3_msfp_init_fd(fd)
 /** @} */
 

@@ -3,6 +3,54 @@
 
 #include "testdata.h"
 
+static char *soh_json_headers = "{"
+                                "\"FDSN\":{"
+                                "\"Time\":{"
+                                "\"Exception\":["
+                                "{"
+                                "\"Time\":\"2012-01-13T00:00:00Z\","
+                                "\"VCOCorrection\":51.51367,"
+                                "\"ReceptionQuality\":0,"
+                                "\"Count\":6829,"
+                                "\"Type\":\"Daily Timemark\","
+                                "\"ClockStatus\":\"SNR=48,49,48,47,51,48,51,50,47,48,46\""
+                                "},"
+                                "{"
+                                "\"Time\":\"2012-01-13T00:03:16.000001Z\","
+                                "\"VCOCorrection\":51.51367,"
+                                "\"ReceptionQuality\":0,"
+                                "\"Count\":196,"
+                                "\"Type\":\"UnExp Timemark\","
+                                "\"ClockStatus\":\"Jump of -0.999999 Seconds\""
+                                "},"
+                                "{"
+                                "\"Time\":\"2012-01-13T00:03:36.000004Z\","
+                                "\"VCOCorrection\":51.51367,"
+                                "\"ReceptionQuality\":90,"
+                                "\"Count\":21,"
+                                "\"Type\":\"Valid Timemark\","
+                                "\"ClockStatus\":\"SNR=47,50,47,49,50,48,52,49,48,46,46\""
+                                "}"
+                                "]"
+                                "},"
+                                "\"Clock\":{"
+                                "\"Model\":\"P273T11N16\""
+                                "}"
+                                "},"
+                                "\"Manufacturer123\":{"
+                                "\"Metadata\":{"
+                                "\"FilamentCurrent\":16.4,"
+                                "\"HyperCoordinates\":\"1.1789:965402:73324@3.14159\""
+                                "}"
+                                "},"
+                                "\"OperatorXYZ\":{"
+                                "\"DSP\":{"
+                                "\"PeakRMS\":2067,"
+                                "\"RMSWindow\":10.5"
+                                "}"
+                                "}"
+                                "}";
+
 extern int cmpfiles (char *fileA, char *fileB);
 
 /* Write test output files.  Reference files are at "data/reference-<name>" */
@@ -49,7 +97,7 @@ TEST (write, msr3_writemseed_encodings)
   int32_t isinedata[SINE_DATA_SAMPLES];
   float fsinedata[SINE_DATA_SAMPLES];
   int idx;
-  int rv;
+  int64_t rv;
 
   /* Create integer and double sine data sets */
   for (idx = 0; idx < SINE_DATA_SAMPLES; idx++)
@@ -257,7 +305,7 @@ TEST (write, msr3_writemseed_headeronly_v2)
 {
   MS3Record *msr = NULL;
   uint32_t flags = MSF_PACKVER2; /* write v2 format */
-  int rv;
+  int64_t rv;
 
   msr = msr3_init (msr);
   REQUIRE (msr != NULL, "msr3_init() returned unexpected NULL");
@@ -272,7 +320,7 @@ TEST (write, msr3_writemseed_headeronly_v2)
   msr->pubversion = 1;
 
   msr->extra = soh_json_headers;
-  msr->extralength = strlen (msr->extra);
+  msr->extralength = (uint16_t)strlen (msr->extra);
 
   msr->samplecnt = 0;
   msr->numsamples = 0;
@@ -293,7 +341,7 @@ TEST (write, msr3_writemseed_headeronly_v3)
 {
   MS3Record *msr = NULL;
   uint32_t flags = 0;
-  int rv;
+  int64_t rv;
 
   msr = msr3_init (msr);
   REQUIRE (msr != NULL, "msr3_init() returned unexpected NULL");
@@ -308,7 +356,7 @@ TEST (write, msr3_writemseed_headeronly_v3)
   msr->pubversion = 1;
 
   msr->extra = soh_json_headers;
-  msr->extralength = strlen (msr->extra);
+  msr->extralength = (uint16_t)strlen (msr->extra);
 
   msr->samplecnt = 0;
   msr->numsamples = 0;
@@ -334,7 +382,7 @@ TEST (write, msr3_writemseed_nanosecond)
   uint32_t flags = MSF_FLUSHDATA; /* Set data flush flag */
   int32_t isinedata[SINE_DATA_SAMPLES];
   int idx;
-  int rv;
+  int64_t rv;
 
   /* Create integer sine data set */
   for (idx = 0; idx < SINE_DATA_SAMPLES; idx++)
@@ -370,7 +418,7 @@ TEST (write, msr3_writemseed_nanosecond)
                      "\"Clock\":{"
                      "\"Model\":\"Acme Corporation GPS3\""
                      "}}}";
-  msr->extralength = strlen (msr->extra);
+  msr->extralength = (uint16_t)strlen (msr->extra);
 
   rv = msr3_writemseed (msr, TESTFILE_NSEC_V3, 1, flags, 0);
   REQUIRE (rv > 0, "msr3_writemseed() return unexpected value");
@@ -397,7 +445,7 @@ TEST (write, msr3_writemseed_nanosecond)
                      "\"Clock\":{"
                      "\"Model\":\"Acme Corporation GPS3\""
                      "}}}";
-  msr->extralength = strlen (msr->extra);
+  msr->extralength = (uint16_t)strlen (msr->extra);
 
   rv = msr3_writemseed (msr, TESTFILE_NSEC_V2, 1, flags, 0);
   REQUIRE (rv > 0, "msr3_writemseed() return unexpected value");
@@ -419,7 +467,7 @@ TEST (write, msr3_writemseed_olden)
   uint32_t flags = MSF_FLUSHDATA; /* Set data flush flag */
   int32_t isinedata[SINE_DATA_SAMPLES];
   int idx;
-  int rv;
+  int64_t rv;
 
   /* Create integer sine data set */
   for (idx = 0; idx < SINE_DATA_SAMPLES; idx++)
@@ -453,7 +501,7 @@ TEST (write, msr3_writemseed_olden)
                      "\"Clock\":{"
                      "\"Model\":\"Ye Olde Clock Tower Company\""
                      "}}}";
-  msr->extralength = strlen (msr->extra);
+  msr->extralength = (uint16_t)strlen (msr->extra);
 
   rv = msr3_writemseed (msr, TESTFILE_OLDEN_V3, 1, flags, 0);
   REQUIRE (rv > 0, "msr3_writemseed() return unexpected value");
@@ -478,7 +526,7 @@ TEST (write, msr3_writemseed_olden)
                      "\"Clock\":{"
                      "\"Model\":\"Ye Olde Clock Tower Company\""
                      "}}}";
-  msr->extralength = strlen (msr->extra);
+  msr->extralength = (uint16_t)strlen (msr->extra);
 
   rv = msr3_writemseed (msr, TESTFILE_OLDEN_V2, 1, flags, 0);
   REQUIRE (rv > 0, "msr3_writemseed() return unexpected value");
@@ -503,7 +551,7 @@ TEST (write, msr3_writemseed_oddrate)
   uint32_t flags = MSF_FLUSHDATA; /* Set data flush flag */
   int32_t isinedata[SINE_DATA_SAMPLES];
   int idx;
-  int rv;
+  int64_t rv;
 
   /* Create integer sine data set */
   for (idx = 0; idx < SINE_DATA_SAMPLES; idx++)

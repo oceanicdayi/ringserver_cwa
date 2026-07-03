@@ -284,6 +284,17 @@ msr3_pack_init (const MS3Record *msr, uint32_t flags, int8_t verbose)
         packer->dataoffset = ((packer->dataoffset + 63) / 64) * 64;
       }
 
+      /* The (possibly aligned) data offset must still leave room for data
+       * within the record and fit the 16-bit v2 data-offset field. */
+      if ((uint32_t)packer->dataoffset >= packer->maxreclen || packer->dataoffset > UINT16_MAX)
+      {
+        ms_log (2, "%s: Data offset (%d) does not fit within record length (%u)\n", msr->sid,
+                packer->dataoffset, packer->maxreclen);
+        libmseed_memory.free (packer->rawrec);
+        libmseed_memory.free (packer);
+        return NULL;
+      }
+
       /* Set data offset in header */
       *pMS2FSDH_DATAOFFSET (packer->rawrec) = HO2u (packer->dataoffset, packer->swapflag);
     }
@@ -314,6 +325,14 @@ msr3_pack_init (const MS3Record *msr, uint32_t flags, int8_t verbose)
     else
     {
       packer->maxsamples = packer->maxdatabytes / packer->samplesize;
+    }
+
+    /* The miniSEED 2 FSDH sample count is a 16-bit field, so a single
+     * record cannot represent more than UINT16_MAX samples regardless of
+     * the record length. */
+    if (packer->formatversion == 2 && packer->maxsamples > UINT16_MAX)
+    {
+      packer->maxsamples = UINT16_MAX;
     }
 
     /* Allocate space for encoded data separately for alignment */
@@ -663,10 +682,10 @@ msr3_repack_mseed3 (const MS3Record *msr, char *record, uint32_t recbuflen, int8
     return -1;
   }
 
-  if (recbuflen < (uint32_t)(MS3FSDH_LENGTH + msr->extralength + origdatasize))
+  if (recbuflen < ((uint32_t)dataoffset + origdatasize))
   {
-    ms_log (2, "%s: Destination record buffer length (%u) is not large enough for record (%d)\n",
-            msr->sid, recbuflen, (MS3FSDH_LENGTH + msr->extralength + origdatasize));
+    ms_log (2, "%s: Destination record buffer length (%u) is not large enough for record (%u)\n",
+            msr->sid, recbuflen, ((uint32_t)dataoffset + origdatasize));
     return -1;
   }
 
@@ -775,6 +794,9 @@ msr3_pack_header3 (const MS3Record *msr, char *record, uint32_t recbuflen, int8_
 
   extraoffset = MS3FSDH_LENGTH + (int)sidlength;
 
+  /* A NULL extra pointer means no extra headers regardless of extralength */
+  uint16_t extralength = (msr->extra) ? msr->extralength : 0;
+
   /* Build fixed header */
   record[0] = 'M';
   record[1] = 'S';
@@ -796,13 +818,13 @@ msr3_pack_header3 (const MS3Record *msr, char *record, uint32_t recbuflen, int8_
 
   *pMS3FSDH_PUBVERSION (record) = msr->pubversion;
   *pMS3FSDH_SIDLENGTH (record) = (uint8_t)sidlength;
-  *pMS3FSDH_EXTRALENGTH (record) = HO2u (msr->extralength, swapflag);
+  *pMS3FSDH_EXTRALENGTH (record) = HO2u (extralength, swapflag);
   memcpy (pMS3FSDH_SID (record), msr->sid, sidlength);
 
-  if (msr->extralength > 0)
-    memcpy (record + extraoffset, msr->extra, msr->extralength);
+  if (extralength > 0)
+    memcpy (record + extraoffset, msr->extra, extralength);
 
-  return (MS3FSDH_LENGTH + (int)sidlength + msr->extralength);
+  return (MS3FSDH_LENGTH + (int)sidlength + extralength);
 } /* End of msr3_pack_header3() */
 
 /** ************************************************************************
@@ -912,10 +934,10 @@ msr3_repack_mseed2 (const MS3Record *msr, char *record, uint32_t recbuflen, int8
   *pMS2FSDH_NUMSAMPLES (record) = HO2u ((uint16_t)msr->samplecnt, swapflag);
   *pMS2FSDH_DATAOFFSET (record) = HO2u (dataoffset, swapflag);
 
-  /* Zero any space between encoded data and end of record */
-  int32_t content = dataoffset + origdatasize;
-  if (content < msr->reclen)
-    memset (record + content, 0, msr->reclen - content);
+  /* Zero any space between encoded data and end of record.  totalsize is the
+   * end of the encoded data (dataoffset + origdatasize), computed above. */
+  if (totalsize < (uint32_t)msr->reclen)
+    memset (record + totalsize, 0, (uint32_t)msr->reclen - totalsize);
 
   if (verbose >= 1)
     ms_log (0, "%s: Repacked %" PRId64 " samples into a %u byte record\n", msr->sid, msr->samplecnt,
@@ -1039,6 +1061,15 @@ msr3_pack_header2_offsets (const MS3Record *msr, char *record, uint32_t recbufle
   {
     ms_log (2, "%s: Cannot pack miniSEED 2, record length (%u) is not a power of 2\n", msr->sid,
             reclen);
+    return -1;
+  }
+
+  /* Ensure the supplied buffer can hold the fixed header and mandatory
+   * Blockette 1000 that are written unconditionally below */
+  if (recbuflen < (uint32_t)(MS2FSDH_LENGTH + 8))
+  {
+    ms_log (2, "%s: Buffer length (%u) is not large enough for fixed header and Blockette 1000\n",
+            msr->sid, recbuflen);
     return -1;
   }
 
@@ -1279,6 +1310,13 @@ msr3_pack_header2_offsets (const MS3Record *msr, char *record, uint32_t recbufle
   /* Add Blockette 1001 if microsecond offset or timing quality is present */
   if (yyjson_ptr_get_uint (ehroot, "/FDSN/Time/Quality", &header_uint) || usec_offset)
   {
+    if (written > UINT16_MAX || (uint64_t)written + 8 > recbuflen)
+    {
+      ms_log (2, "%s: Record length not large enough for B1001\n", msr->sid);
+      yyjson_doc_free (ehdoc);
+      return -1;
+    }
+
     *next_blockette = HO2u ((uint16_t)written, swapflag);
     next_blockette = pMS2B1001_NEXT (record + written);
     *pMS2FSDH_NUMBLOCKETTES (record) += 1;
@@ -1305,6 +1343,13 @@ msr3_pack_header2_offsets (const MS3Record *msr, char *record, uint32_t recbufle
   /* Add Blockette 100 if sample rate is not well represented by factor/multiplier */
   if (fabs (msr3_sampratehz (msr) - ms_nomsamprate (factor, multiplier)) > 0.0001)
   {
+    if (written > UINT16_MAX || (uint64_t)written + 12 > recbuflen)
+    {
+      ms_log (2, "%s: Record length not large enough for B100\n", msr->sid);
+      yyjson_doc_free (ehdoc);
+      return -1;
+    }
+
     *next_blockette = HO2u ((uint16_t)written, swapflag);
     next_blockette = pMS2B100_NEXT (record + written);
     *pMS2FSDH_NUMBLOCKETTES (record) += 1;
@@ -1330,7 +1375,7 @@ msr3_pack_header2_offsets (const MS3Record *msr, char *record, uint32_t recbufle
 
       blockette_length = 200;
 
-      if ((recbuflen - written) < blockette_length)
+      if (written > UINT16_MAX || (uint64_t)written + blockette_length > recbuflen)
       {
         ms_log (2, "%s: Record length not large enough for B500\n", msr->sid);
         yyjson_doc_free (ehdoc);
@@ -1408,7 +1453,7 @@ msr3_pack_header2_offsets (const MS3Record *msr, char *record, uint32_t recbufle
         blockette_length = 52;
       }
 
-      if ((recbuflen - written) < blockette_length)
+      if (written > UINT16_MAX || (uint64_t)written + blockette_length > recbuflen)
       {
         ms_log (2, "%s: Record length not large enough for B%u\n", msr->sid, blockette_type);
         yyjson_doc_free (ehdoc);
@@ -1475,7 +1520,7 @@ msr3_pack_header2_offsets (const MS3Record *msr, char *record, uint32_t recbufle
         {
           yyjson_arr_iter_init (ehsubarr, &ehsubiter);
 
-          while ((ehsubiterval = yyjson_arr_iter_next (&ehsubiter)))
+          while ((ehsubiterval = yyjson_arr_iter_next (&ehsubiter)) && idx < 6)
           {
             if (!yyjson_is_num (ehsubiterval))
               continue;
@@ -1485,11 +1530,11 @@ msr3_pack_header2_offsets (const MS3Record *msr, char *record, uint32_t recbufle
         }
 
         if (yyjson_ptr_get_uint (ehiterval, "/MEDLookback", &header_uint) &&
-            header_uint < UINT8_MAX)
+            header_uint <= UINT8_MAX)
           *pMS2B201_LOOPBACK (record + written) = (uint8_t)header_uint;
 
         if (yyjson_ptr_get_uint (ehiterval, "/MEDPickAlgorithm", &header_uint) &&
-            header_uint < UINT8_MAX)
+            header_uint <= UINT8_MAX)
           *pMS2B201_PICKALGORITHM (record + written) = (uint8_t)header_uint;
 
         if (yyjson_ptr_get_str (ehiterval, "/Detector", &header_string))
@@ -1550,7 +1595,7 @@ msr3_pack_header2_offsets (const MS3Record *msr, char *record, uint32_t recbufle
         return -1;
       }
 
-      if ((recbuflen - written) < blockette_length)
+      if (written > UINT16_MAX || (uint64_t)written + blockette_length > recbuflen)
       {
         ms_log (2, "%s: Record length not large enough for B%u\n", msr->sid, blockette_type);
         yyjson_doc_free (ehdoc);
@@ -1732,7 +1777,7 @@ msr3_pack_header2_offsets (const MS3Record *msr, char *record, uint32_t recbufle
         blockette_type = 395;
         blockette_length = 16;
 
-        if ((recbuflen - written) < blockette_length)
+        if (written > UINT16_MAX || (uint64_t)written + blockette_length > recbuflen)
         {
           ms_log (2, "%s: Record length not large enough for B%u\n", msr->sid, blockette_type);
           yyjson_doc_free (ehdoc);

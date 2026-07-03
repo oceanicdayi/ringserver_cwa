@@ -153,6 +153,24 @@ ms3_msfp_init (int64_t startoffset, int64_t endoffset, int fd)
       libmseed_memory.free (msfp);
       return NULL;
     }
+
+    /* Seek to the start offset and set stream position; the dup'd descriptor
+     * shares the file offset of the original and is not otherwise positioned.
+     * Only required when a start offset is requested, which also keeps
+     * non-seekable descriptors (e.g. pipes) usable when startoffset is 0. */
+    if (msfp->startoffset > 0)
+    {
+      if (lmp_fseek64 (msfp->input.handle, msfp->startoffset, SEEK_SET))
+      {
+        ms_log (2, "%s(): Cannot seek file descriptor %d to offset %" PRId64 "\n",
+                __func__, fd, msfp->startoffset);
+        msio_fclose (&msfp->input);
+        libmseed_memory.free (msfp);
+        return NULL;
+      }
+
+      msfp->streampos = msfp->startoffset;
+    }
   }
 
   return msfp;
@@ -300,7 +318,14 @@ _ms3_readmsr_impl (MS3FileParam **ppmsfp, MS3Record **ppmsr, const char *mspath,
     /* Truncate to remove byte range suffix if present or maximum range */
     if (pathname_range)
     {
-      msfp->path[pathname_range - mspath] = '\0';
+      size_t rangeidx = (size_t)(pathname_range - mspath);
+
+      /* pathname_range points into the original mspath, which may be longer
+       * than the path buffer; clamp the index to stay within bounds */
+      if (rangeidx >= sizeof (msfp->path))
+        rangeidx = sizeof (msfp->path) - 1;
+
+      msfp->path[rangeidx] = '\0';
     }
     else
     {
@@ -375,18 +400,23 @@ _ms3_readmsr_impl (MS3FileParam **ppmsfp, MS3Record **ppmsr, const char *mspath,
       /* Determine read size */
       readsize = (MAXRECLEN - msfp->readlength);
 
-      /* Read data into record buffer */
-      readcount = (int)msio_fread (&msfp->input, msfp->readbuffer + msfp->readlength, readsize);
-
-      if (readcount <= 0 && !msio_feof (&msfp->input))
+      /* Read data into record buffer only when there is room; a full buffer
+       * (readsize == 0) means the buffer is exhausted for the current record
+       * and is handled by the oversized-record logic below, not a read error. */
+      if (readsize > 0)
       {
-        ms_log (2, "Error reading %s at offset %" PRId64 "\n", msfp->path, msfp->streampos);
-        retcode = MS_GENERROR;
-        break;
-      }
+        readcount = (int)msio_fread (&msfp->input, msfp->readbuffer + msfp->readlength, readsize);
 
-      /* Update read buffer length */
-      msfp->readlength += readcount;
+        if (readcount <= 0 && !msio_feof (&msfp->input))
+        {
+          ms_log (2, "Error reading %s at offset %" PRId64 "\n", msfp->path, msfp->streampos);
+          retcode = MS_GENERROR;
+          break;
+        }
+
+        /* Update read buffer length */
+        msfp->readlength += readcount;
+      }
     }
 
     /* Attempt to parse record from buffer */
@@ -1006,7 +1036,11 @@ msr3_writemseed (MS3Record *msr, const char *mspath, int8_t overwrite, uint32_t 
   /* Initialize packer */
   packer = msr3_pack_init (msr, flags, verbose);
   if (!packer)
+  {
+    if (ofp != stdout)
+      fclose (ofp);
     return -1;
+  }
 
   /* Pack the MS3Record */
   while ((result = msr3_pack_next (packer, &record, &reclen)) == 1)
@@ -1014,11 +1048,16 @@ msr3_writemseed (MS3Record *msr, const char *mspath, int8_t overwrite, uint32_t 
     if (fwrite (record, reclen, 1, (FILE *)ofp) != 1)
     {
       ms_log (2, "Error writing to output file\n");
+      packedrecords = -1;
       break;
     }
 
     packedrecords++;
   }
+
+  /* A negative result indicates a packing error */
+  if (result < 0 && packedrecords >= 0)
+    packedrecords = -1;
 
   /* Free packer and get total packed samples */
   msr3_pack_free (&packer, NULL);
@@ -1148,10 +1187,10 @@ parse_pathname_range (const char *string, int64_t *start, int64_t *end)
     while (*(++ptr) != '\0')
     {
       /* If a digit before dash, part of start */
-      if (isdigit ((int)*ptr) && dash == NULL)
+      if (isdigit ((unsigned char)*ptr) && dash == NULL)
         startstr[startdigits++] = *ptr;
       /* If a digit after dash, part of end */
-      else if (isdigit ((int)*ptr) && dash != NULL)
+      else if (isdigit ((unsigned char)*ptr) && dash != NULL)
         endstr[enddigits++] = *ptr;
       /* If a dash after a dash, not a valid range */
       else if (*ptr == '-' && dash != NULL)

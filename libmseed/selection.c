@@ -88,25 +88,27 @@ ms3_matchselect (const MS3Selections *selections, const char *sid, nstime_t star
         findst = findsl->timewindows;
         while (findst)
         {
-          if (starttime != NSTERROR && starttime != NSTUNSET && findst->starttime != NSTERROR &&
-              findst->starttime != NSTUNSET &&
-              (starttime < findst->starttime &&
-               !(starttime <= findst->starttime && endtime >= findst->starttime)))
+          /* Treat unset/error bounds as open-ended: -infinity for start bounds
+           * and +infinity for end bounds.  The query window [qstart, qend]
+           * matches the selection window [sstart, send] when the two windows
+           * intersect: qstart <= send && qend >= sstart (inclusive). */
+          nstime_t qstart =
+              (starttime == NSTERROR || starttime == NSTUNSET) ? INT64_MIN : starttime;
+          nstime_t qend = (endtime == NSTERROR || endtime == NSTUNSET) ? INT64_MAX : endtime;
+          nstime_t sstart = (findst->starttime == NSTERROR || findst->starttime == NSTUNSET)
+                                ? INT64_MIN
+                                : findst->starttime;
+          nstime_t send = (findst->endtime == NSTERROR || findst->endtime == NSTUNSET)
+                              ? INT64_MAX
+                              : findst->endtime;
+
+          if (qstart <= send && qend >= sstart)
           {
-            findst = findst->next;
-            continue;
-          }
-          else if (endtime != NSTERROR && endtime != NSTUNSET && findst->endtime != NSTERROR &&
-                   findst->endtime != NSTUNSET &&
-                   (endtime > findst->endtime &&
-                    !(starttime <= findst->endtime && endtime >= findst->endtime)))
-          {
-            findst = findst->next;
-            continue;
+            matchst = findst;
+            break;
           }
 
-          matchst = findst;
-          break;
+          findst = findst->next;
         }
       }
 
@@ -210,6 +212,7 @@ ms3_addselect (MS3Selections **ppselections, const char *sidpattern, nstime_t st
     if (!(newsl = (MS3Selections *)libmseed_memory.malloc (sizeof (MS3Selections))))
     {
       ms_log (2, "Cannot allocate memory\n");
+      libmseed_memory.free (newst);
       return -1;
     }
     memset (newsl, 0, sizeof (MS3Selections));
@@ -251,6 +254,7 @@ ms3_addselect (MS3Selections **ppselections, const char *sidpattern, nstime_t st
       if (!(newsl = (MS3Selections *)libmseed_memory.malloc (sizeof (MS3Selections))))
       {
         ms_log (2, "Cannot allocate memory\n");
+        libmseed_memory.free (newst);
         return -1;
       }
       memset (newsl, 0, sizeof (MS3Selections));
@@ -483,7 +487,7 @@ ms3_readselectionsfile (MS3Selections **ppselections, const char *filename)
       cp++;
     }
     cp--;
-    while (cp >= line && isspace ((int)(*cp)))
+    while (cp >= line && isspace ((unsigned char)(*cp)))
     {
       *cp = '\0';
       cp--;
@@ -491,7 +495,7 @@ ms3_readselectionsfile (MS3Selections **ppselections, const char *filename)
 
     /* Trim leading whitespace if any */
     cp = line;
-    while (isspace ((int)(*cp)))
+    while (isspace ((unsigned char)(*cp)))
     {
       line = cp = cp + 1;
     }
@@ -510,7 +514,7 @@ ms3_readselectionsfile (MS3Selections **ppselections, const char *filename)
     fieldidx = 0;
     while (*cp && fieldidx < MAX_SELECTION_FIELDS)
     {
-      if (!isspace ((int)(*cp)))
+      if (!isspace ((unsigned char)(*cp)))
       {
         /* Field starts at transition from whitespace to non-whitespace */
         if (next == 0)
@@ -750,7 +754,7 @@ ms_isinteger (const char *string)
 {
   while (*string)
   {
-    if (!isdigit ((int)(*string)))
+    if (!isdigit ((unsigned char)(*string)))
       return 0;
     string++;
   }
@@ -772,6 +776,13 @@ static int _match_charclass (const char **pp, unsigned char c);
  * `[!a-z]` negation, matches when no characters in the range, e.g. `[!A-Z]` or `[^A-Z]`
  * `\` prefix to match a literal character, e.g. `\*`, `\?`, `\[`
  *
+ * Notes / limitations:
+ * - Escapes are not interpreted inside `[...]`; e.g. `[\]]` is a class
+ *   containing `\` terminated by the first `]`.
+ * - Descending ranges (e.g. `[z-a]`) are treated as the three literal
+ *   characters rather than an error.
+ * - A trailing `\` with no following character matches a literal `\`.
+ *
  * @param string  The string to check.
  * @param pattern The globbing pattern to match.
  *
@@ -780,8 +791,9 @@ static int _match_charclass (const char **pp, unsigned char c);
 static int
 ms_globmatch (const char *string, const char *pattern)
 {
-  const char *star_p = NULL; /* position of last '*' in pattern */
-  const char *star_s = NULL; /* position in string when last '*' seen */
+  const char *star_p  = NULL; /* position of the most recent '*' in pattern */
+  const char *star_s  = NULL; /* position in string when that '*' was seen */
+  unsigned char star_skip = 0; /* byte to skip past on backtrack, or 0 if none */
   unsigned char c;
 
   if (string == NULL || pattern == NULL)
@@ -817,23 +829,29 @@ ms_globmatch (const char *string, const char *pattern)
       if (*pattern == '\0')
         return 1;
 
-      /* If the next significant pattern character is a literal, fast-forward
-         the string to its next occurrence to reduce backtracking. */
+      /* Determine the literal byte (if any) following the '*'. If it is a
+         literal, we can skip string characters that cannot match it. */
       {
         unsigned char next = (unsigned char)*pattern;
 
         if (next == '\\' && pattern[1])
           next = (unsigned char)pattern[1];
+        else if (next == '?' || next == '[')
+          next = 0; /* not a literal; skip the optimization */
 
-        if (next != '?' && next != '[' && next != '*')
+        star_skip = next;
+
+        if (star_skip)
         {
-          while (*string && (unsigned char)*string != next)
-            string++;
+          const char *found = strchr (string, star_skip);
+          if (found == NULL)
+            return 0; /* required literal cannot occur in remaining string */
+          string = found;
         }
       }
 
-      star_p = pattern - 1; /* remember position of '*' */
-      star_s = string;      /* remember current string position */
+      star_p = pattern - 1;
+      star_s = string;
       continue;
 
     case '[':
@@ -869,7 +887,24 @@ ms_globmatch (const char *string, const char *pattern)
     {
       if (*star_s == '\0')
         return 0;
-      string = ++star_s;
+
+      star_s++;
+
+      /* Reuse the saved fast-forward byte so we don't walk non-matching
+         characters one at a time on each retry. */
+      if (star_skip)
+      {
+        const char *found = strchr (star_s, star_skip);
+        if (found == NULL)
+          return 0;
+        star_s = found;
+      }
+      else if (*star_s == '\0')
+      {
+        return 0;
+      }
+
+      string = star_s;
       pattern = star_p + 1;
       continue;
     }
