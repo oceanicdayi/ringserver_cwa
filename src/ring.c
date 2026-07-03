@@ -978,6 +978,12 @@ RingRead (RingReader *reader, uint64_t reqid,
     return pktid;
   }
 
+  /* Confirm the copied slot still holds the requested ID */
+  if (packet->pktid != reqid)
+  {
+    return RINGID_NONE;
+  }
+
   /* Update reader position value */
   reader->pktoffset = packet->offset;
   reader->pktid     = packet->pktid;
