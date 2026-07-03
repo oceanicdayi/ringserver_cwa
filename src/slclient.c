@@ -2162,21 +2162,25 @@ SendPacket (uint64_t pktid, char *payload, uint32_t payloadlen,
 
   if (slinfo->proto_major == 4) /* Create v4 header */
   {
+    uint32_t l_payloadlen = payloadlen;
+    uint64_t l_pktid      = pktid;
+
     l_staidlen = (staid) ? (uint8_t)strlen (staid) : 0;
 
-    /* V4 header values are little-endian byte order */
+    /* V4 header values are little-endian byte order.  Swap into locals so the
+     * original payloadlen is preserved for the host-order length below. */
     if (ms_bigendianhost ())
     {
-      ms_gswap4 (&payloadlen);
-      ms_gswap8 (&pktid);
+      ms_gswap4 (&l_payloadlen);
+      ms_gswap8 (&l_pktid);
     }
 
     /* Construct v4 header */
     memcpy (header, "SE", 2);
     memcpy (header + 2, &format, 1);
     memcpy (header + 3, &subformat, 1);
-    memcpy (header + 4, &payloadlen, 4);
-    memcpy (header + 8, &pktid, 8);
+    memcpy (header + 4, &l_payloadlen, 4);
+    memcpy (header + 8, &l_pktid, 8);
     memcpy (header + 16, &l_staidlen, 1);
     memcpy (header + 17, staid, l_staidlen);
 
