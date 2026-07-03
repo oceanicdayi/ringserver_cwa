@@ -166,10 +166,10 @@ LoadBufferV1 (char *ringfile_v1)
   }
 
   /* Check for compatible packet size */
-  if (ringparams_v1.pktsize == 0 || ringparams_v1.pktsize > param.pktsize)
+  if (ringparams_v1.pktsize <= sizeof (RingPacketV1) || ringparams_v1.pktsize > param.pktsize)
   {
-    lprintf (0, "%s(): version 1 ring file %s has incompatible packet size %u, expected > 0 and <= %u",
-             __func__, ringfile_v1, ringparams_v1.pktsize, param.pktsize);
+    lprintf (0, "%s(): version 1 ring file %s has incompatible packet size %u, expected > %zu and <= %u",
+             __func__, ringfile_v1, ringparams_v1.pktsize, sizeof (RingPacketV1), param.pktsize);
     close (ringfd_v1);
     return -1;
   }
@@ -423,10 +423,10 @@ LoadBufferV2 (char *ringfile_v2)
   }
 
   /* Check for compatible packet size */
-  if (ringparams_v2.pktsize == 0 || ringparams_v2.pktsize > param.pktsize)
+  if (ringparams_v2.pktsize <= sizeof (RingPacketV2) || ringparams_v2.pktsize > param.pktsize)
   {
-    lprintf (0, "%s(): version 2 ring file %s has incompatible packet size %u, expected > 0 and <= %u",
-             __func__, ringfile_v2, ringparams_v2.pktsize, param.pktsize);
+    lprintf (0, "%s(): version 2 ring file %s has incompatible packet size %u, expected > %zu and <= %u",
+             __func__, ringfile_v2, ringparams_v2.pktsize, sizeof (RingPacketV2), param.pktsize);
     close (ringfd_v2);
     return -1;
   }
@@ -582,10 +582,10 @@ LoadBufferV3 (char *ringfile_v3)
   }
 
   /* Check for compatible packet size */
-  if (old_pktsize == 0 || old_pktsize > param.pktsize)
+  if (old_pktsize <= sizeof (RingPacket) || old_pktsize > param.pktsize)
   {
-    lprintf (0, "%s(): ring file %s has incompatible packet size %u, expected > 0 and <= %u",
-             __func__, ringfile_v3, old_pktsize, param.pktsize);
+    lprintf (0, "%s(): ring file %s has incompatible packet size %u, expected > %zu and <= %u",
+             __func__, ringfile_v3, old_pktsize, sizeof (RingPacket), param.pktsize);
     close (ringfd_v3);
     return -1;
   }

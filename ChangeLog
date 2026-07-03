@@ -6,6 +6,7 @@
 	- Limit mseedscan detection read to buffer size to prevent heap overflow.
 	- Cleanly handle empty config file lines.
 	- Reject path-traversal SID components in archive path substitution.
+	- Harden ring buffer loading against corrupted packet size fields.
 	- Update libmseed to v3.4.1.
 
 2026.181: v4.5.3
