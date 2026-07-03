@@ -3222,7 +3222,7 @@ AddIPNet (IPNet **pplist, const char *network, const char *limitstr)
         newipnet->netmask.in_addr.s_addr = v4netmask;
       /* Calculate netmask from prefix, if the prefix > 32 use 32 as a max for IPv4 */
       else if (prefix > 0)
-        newipnet->netmask.in_addr.s_addr = ~((1 << (32 - ((prefix > 32) ? 32 : prefix))) - 1);
+        newipnet->netmask.in_addr.s_addr = ~((1U << (32 - ((prefix > 32) ? 32 : prefix))) - 1);
       else
         newipnet->netmask.in_addr.s_addr = 0;
 
