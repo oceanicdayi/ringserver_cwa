@@ -1889,6 +1889,10 @@ SetParameter (const char *paramstring, int dynamiconly)
     }
   }
 
+  /* Nothing to do for a line that tokenizes to zero fields */
+  if (fieldcount == 0)
+    return 0;
+
   /* Search for recognized parameters */
   if (!strcasecmp ("RingDirectory", field[0]) && fieldcount == 2)
   {

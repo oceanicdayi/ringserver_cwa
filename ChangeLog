@@ -4,6 +4,7 @@
 	- Fix use-after-free race on DataLink matchstr/rejectstr updates.
 	- Fix busy-loop on undetermined (protocol) clients.
 	- Limit mseedscan detection read to buffer size to prevent heap overflow.
+	- Cleanly handle empty config file lines.
 	- Update libmseed to v3.4.1.
 
 2026.181: v4.5.3
