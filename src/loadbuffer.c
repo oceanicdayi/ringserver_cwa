@@ -200,7 +200,7 @@ LoadBufferV1 (char *ringfile_v1)
   /* Traverse packet buffer from earliest to latest */
   uint64_t maxpackets = (ringparams_v1.maxoffset / ringparams_v1.pktsize) + 1;
   offset              = ringparams_v1.earliestoffset;
-  while (offset >= 0 && offset <= ringparams_v1.maxoffset && count <= maxpackets)
+  while (offset >= 0 && offset <= ringparams_v1.maxoffset && count < maxpackets)
   {
     /* Read packet from offset */
     if (pread (ringfd_v1, packetbuffer, ringparams_v1.pktsize, ringparams_v1.headersize + offset) != ringparams_v1.pktsize)
@@ -447,7 +447,7 @@ LoadBufferV2 (char *ringfile_v2)
   /* Traverse packet buffer from earliest to latest */
   uint64_t maxpackets = (ringparams_v2.maxoffset / ringparams_v2.pktsize) + 1;
   offset              = ringparams_v2.earliestoffset;
-  while (offset >= 0 && offset <= ringparams_v2.maxoffset && count <= maxpackets)
+  while (offset >= 0 && offset <= ringparams_v2.maxoffset && count < maxpackets)
   {
     /* Read packet from offset */
     if (pread (ringfd_v2, packetbuffer, ringparams_v2.pktsize, ringparams_v2.headersize + offset) != ringparams_v2.pktsize)
@@ -605,7 +605,7 @@ LoadBufferV3 (char *ringfile_v3)
 
   maxpackets = (old_maxoffset / old_pktsize) + 1;
   offset     = old_earliestoffset;
-  while (offset >= 0 && offset <= old_maxoffset && count <= maxpackets)
+  while (offset >= 0 && offset <= old_maxoffset && count < maxpackets)
   {
     if (pread (ringfd_v3, packetbuffer, old_pktsize, old_headersize + offset) != (ssize_t)old_pktsize)
     {
