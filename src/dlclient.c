@@ -949,8 +949,13 @@ HandleWrite (ClientInfo *cinfo, CmdToken *cmd)
   /* Otherwise copy stream ID verbatim */
   else
   {
-    strncpy (cinfo->packet.streamid, streamid, sizeof (cinfo->packet.streamid) - 1);
-    cinfo->packet.streamid[sizeof (cinfo->packet.streamid) - 1] = '\0';
+    size_t sidlen = strlen (streamid);
+
+    if (sidlen >= sizeof (cinfo->packet.streamid))
+      sidlen = sizeof (cinfo->packet.streamid) - 1;
+
+    memcpy (cinfo->packet.streamid, streamid, sidlen);
+    cinfo->packet.streamid[sidlen] = '\0';
   }
 
   /* Wire protocol for DataLink uses time stamps in as microseconds since the epoch,
