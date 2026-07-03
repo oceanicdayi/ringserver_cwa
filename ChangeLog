@@ -3,6 +3,7 @@
 	- Fix SeedLink v4 header creation on big-endian hosts.
 	- Fix use-after-free race on DataLink matchstr/rejectstr updates.
 	- Fix busy-loop on undetermined (protocol) clients.
+	- Limit mseedscan detection read to buffer size to prevent heap overflow.
 	- Update libmseed to v3.4.1.
 
 2026.181: v4.5.3

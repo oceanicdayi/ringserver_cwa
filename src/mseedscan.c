@@ -695,7 +695,10 @@ ProcessFile (MSScanInfo *mssinfo, const char *filename, FileNode *fnode,
     }
 
     /* Read up to MSSCAN_READLEN bytes into buffer */
-    if ((nread = pread (fd, mssinfo->readbuffer, MSSCAN_READLEN, newoffset)) <= 0)
+    size_t detreadlen = (mssinfo->readbuffersize < MSSCAN_READLEN)
+                            ? mssinfo->readbuffersize
+                            : MSSCAN_READLEN;
+    if ((nread = pread (fd, mssinfo->readbuffer, detreadlen, newoffset)) <= 0)
     {
       if (!(param.shutdownsig && errno == EINTR))
       {
