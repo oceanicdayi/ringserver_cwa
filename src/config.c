@@ -46,6 +46,7 @@ static int AddMSeedScanThread (const char *configstr);
 static int AddServerThread (ServerThreadType type, void *params);
 static int AddIPNet (IPNet **pplist, const char *network, const char *limitstr);
 static int SetAuthCommand (const char *program, char **argv, int argc);
+static void FreeArgv (char **argv);
 
 /* This array defines the reference config file documentation printed
  * using the -C argument */
@@ -1607,6 +1608,27 @@ ReadConfigFile (char *configfile, int dynamiconly, time_t mtime)
   UsageLogMode saved_usagelog_mode = USAGELOG_NONE;
   char *saved_usagelog_basedir     = NULL;
   char *saved_usagelog_prefix      = NULL;
+  char *saved_serverid             = NULL;
+  char *saved_tlscertfile          = NULL;
+  char *saved_tlskeyfile           = NULL;
+  char *saved_auth_program         = NULL;
+  char **saved_auth_argv           = NULL;
+
+  /* Saved copies of dynamic scalar fields, used to restore on parse failure */
+  int saved_verbose                    = 0;
+  uint32_t saved_maxclientsperip       = 0;
+  uint32_t saved_maxclients            = 0;
+  uint32_t saved_clienttimeout         = 0;
+  uint32_t saved_netiotimeout          = 0;
+  uint32_t saved_tcpkeepalive_idle     = 0;
+  uint32_t saved_tcpkeepalive_interval = 0;
+  uint32_t saved_tcpkeepalive_count    = 0;
+  float saved_timewinlimit             = 0.0;
+  uint8_t saved_resolvehosts           = 0;
+  int saved_tlsverifyclientcert        = 0;
+  uint8_t saved_auth_required          = 0;
+  uint32_t saved_auth_timeout_sec      = 0;
+  int saved_usagelog_interval          = 0;
 
   if (!configfile)
     return -1;
@@ -1650,6 +1672,26 @@ ReadConfigFile (char *configfile, int dynamiconly, time_t mtime)
   saved_usagelog_mode    = config.usagelog.mode;
   saved_usagelog_basedir = config.usagelog.basedir;
   saved_usagelog_prefix  = config.usagelog.prefix;
+  saved_serverid         = config.serverid;
+  saved_tlscertfile      = config.tlscertfile;
+  saved_tlskeyfile       = config.tlskeyfile;
+  saved_auth_program     = config.auth.program;
+  saved_auth_argv        = config.auth.argv;
+
+  saved_verbose               = config.verbose;
+  saved_maxclientsperip       = config.maxclientsperip;
+  saved_maxclients            = config.maxclients;
+  saved_clienttimeout         = config.clienttimeout;
+  saved_netiotimeout          = config.netiotimeout;
+  saved_tcpkeepalive_idle     = config.tcpkeepalive_idle;
+  saved_tcpkeepalive_interval = config.tcpkeepalive_interval;
+  saved_tcpkeepalive_count    = config.tcpkeepalive_count;
+  saved_timewinlimit          = config.timewinlimit;
+  saved_resolvehosts          = config.resolvehosts;
+  saved_tlsverifyclientcert   = config.tlsverifyclientcert;
+  saved_auth_required         = config.auth.required;
+  saved_auth_timeout_sec      = config.auth.timeout_sec;
+  saved_usagelog_interval     = config.usagelog.interval;
 
   /* Clear the write, trusted, allowed, forbidden, match and reject IPs lists */
   config.writeips     = NULL;
@@ -1669,6 +1711,14 @@ ReadConfigFile (char *configfile, int dynamiconly, time_t mtime)
   config.usagelog.mode    = USAGELOG_NONE;
   config.usagelog.basedir = NULL;
   config.usagelog.prefix  = NULL;
+
+  /* Clear dynamic string parameters so SetParameter() rebuilds them without
+   * freeing the saved copies; absent directives are re-preserved on success. */
+  config.serverid     = NULL;
+  config.tlscertfile  = NULL;
+  config.tlskeyfile   = NULL;
+  config.auth.program = NULL;
+  config.auth.argv    = NULL;
 
   /* Read and process all lines */
   while (fgets (line, sizeof (line), cfile))
@@ -1743,6 +1793,35 @@ ReadConfigFile (char *configfile, int dynamiconly, time_t mtime)
   free (saved_usagelog_basedir);
   free (saved_usagelog_prefix);
 
+  /* For the string parameters that historically persist when absent from the
+   * file, keep the previous value if the reloaded file did not set a new one;
+   * otherwise discard the saved copy. */
+  if (config.serverid)
+    free (saved_serverid);
+  else
+    config.serverid = saved_serverid;
+
+  if (config.tlscertfile)
+    free (saved_tlscertfile);
+  else
+    config.tlscertfile = saved_tlscertfile;
+
+  if (config.tlskeyfile)
+    free (saved_tlskeyfile);
+  else
+    config.tlskeyfile = saved_tlskeyfile;
+
+  if (config.auth.program)
+  {
+    free (saved_auth_program);
+    FreeArgv (saved_auth_argv);
+  }
+  else
+  {
+    config.auth.program = saved_auth_program;
+    config.auth.argv    = saved_auth_argv;
+  }
+
   return 0;
 
 restore_config:
@@ -1757,6 +1836,11 @@ restore_config:
   free (config.httpheaders);
   free (config.usagelog.basedir);
   free (config.usagelog.prefix);
+  free (config.serverid);
+  free (config.tlscertfile);
+  free (config.tlskeyfile);
+  free (config.auth.program);
+  FreeArgv (config.auth.argv);
 
   config.writeips         = saved_writeips;
   config.trustedips       = saved_trustedips;
@@ -1769,6 +1853,26 @@ restore_config:
   config.usagelog.mode    = saved_usagelog_mode;
   config.usagelog.basedir = saved_usagelog_basedir;
   config.usagelog.prefix  = saved_usagelog_prefix;
+  config.serverid         = saved_serverid;
+  config.tlscertfile      = saved_tlscertfile;
+  config.tlskeyfile       = saved_tlskeyfile;
+  config.auth.program     = saved_auth_program;
+  config.auth.argv        = saved_auth_argv;
+
+  config.verbose               = saved_verbose;
+  config.maxclientsperip       = saved_maxclientsperip;
+  config.maxclients            = saved_maxclients;
+  config.clienttimeout         = saved_clienttimeout;
+  config.netiotimeout          = saved_netiotimeout;
+  config.tcpkeepalive_idle     = saved_tcpkeepalive_idle;
+  config.tcpkeepalive_interval = saved_tcpkeepalive_interval;
+  config.tcpkeepalive_count    = saved_tcpkeepalive_count;
+  config.timewinlimit          = saved_timewinlimit;
+  config.resolvehosts          = saved_resolvehosts;
+  config.tlsverifyclientcert   = saved_tlsverifyclientcert;
+  config.auth.required         = saved_auth_required;
+  config.auth.timeout_sec      = saved_auth_timeout_sec;
+  config.usagelog.interval     = saved_usagelog_interval;
 
   return -1;
 } /* End of ReadConfigFile() */
@@ -2540,8 +2644,8 @@ InitServerSocket (char *portstr, ListenOptions options)
   struct addrinfo *addr = NULL;
   struct addrinfo hints;
   char *familystr = NULL;
-  int fd        = -1;
-  int result_fd = -1;
+  int fd          = -1;
+  int result_fd   = -1;
   int optval;
   int gaierror;
 
@@ -3309,14 +3413,7 @@ SetAuthCommand (const char *program, char **argv, int argc)
 
   /* Free any existing auth command parameters */
   free (config.auth.program);
-  if (config.auth.argv != NULL)
-  {
-    for (char **arg = config.auth.argv; *arg != NULL; arg++)
-    {
-      free (*arg);
-    }
-    free (config.auth.argv);
-  }
+  FreeArgv (config.auth.argv);
   config.auth.program = NULL;
   config.auth.argv    = NULL;
 
@@ -3373,13 +3470,26 @@ SetAuthCommand (const char *program, char **argv, int argc)
 cleanup_error:
   free (config.auth.program);
   config.auth.program = NULL;
-  if (config.auth.argv != NULL)
-  {
-    for (char **arg = config.auth.argv; *arg != NULL; arg++)
-      free (*arg);
-    free (config.auth.argv);
-    config.auth.argv = NULL;
-  }
+  FreeArgv (config.auth.argv);
+  config.auth.argv = NULL;
 
   return -1;
 } /* End of SetAuthCommand() */
+
+/***************************************************************************
+ * FreeArgv:
+ *
+ * Free a NULL-terminated argument vector and its elements.  A NULL vector
+ * is a no-op.
+ ***************************************************************************/
+static void
+FreeArgv (char **argv)
+{
+  if (argv == NULL)
+    return;
+
+  for (char **arg = argv; *arg != NULL; arg++)
+    free (*arg);
+
+  free (argv);
+} /* End of FreeArgv() */

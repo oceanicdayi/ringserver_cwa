@@ -1,5 +1,6 @@
 2026.184:
 	- Add gzip HTTP content encoding support for status endpoints.
+	- Fully roll back dynamic parameters on failed config reload.
 	- Fix SeedLink v4 header creation on big-endian hosts.
 	- Fix use-after-free race on DataLink matchstr/rejectstr updates.
 	- Fix busy-loop on undetermined (protocol) clients.
