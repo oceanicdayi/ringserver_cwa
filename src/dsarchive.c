@@ -179,6 +179,26 @@ ds_streamproc (DataStream *datastream, MS3Record *msr, char *hostname)
                  location, sizeof (location),
                  channel, sizeof (channel));
 
+  /* Reject SID components that could steer the archive path outside its root
+     (path traversal) when substituted for %n/%s/%l/%c.  A '/' would create an
+     unintended directory boundary and '.'/'..' reference the current/parent
+     directory. */
+  {
+    char *sidcodes[] = {network, station, location, channel};
+    for (int cidx = 0; cidx < 4; cidx++)
+    {
+      char *code = sidcodes[cidx];
+      if (strcmp (code, ".") == 0 || strcmp (code, "..") == 0 ||
+          strchr (code, '/') != NULL)
+      {
+        lprintf (0, "[%s] ds_streamproc(): unsafe SID component '%s' in %s, rejecting record",
+                 hostname, code, msr->sid);
+        ds_strparse (NULL, NULL, &fnlist);
+        return -1;
+      }
+    }
+  }
+
   /* Decompose start time */
   ms_nstime2time (msr->starttime, &year, &yday, &hour, &min, &sec, &nsec);
 
