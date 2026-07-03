@@ -1211,6 +1211,10 @@ GenerateHeader (ClientInfo *cinfo, int status, MediaType type,
 
   pthread_rwlock_unlock (&config.config_rwlock);
 
+  /* A negative return from snprintf indicates an output error */
+  if (headlen < 0)
+    return -1;
+
   return ((size_t)headlen >= cinfo->sendbufsize) ? cinfo->sendbufsize - 1 : headlen;
 }
 
