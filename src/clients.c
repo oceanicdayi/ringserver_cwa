@@ -424,8 +424,8 @@ ClientThread (void *arg)
          enough to determine the type. */
       else
       {
-        timereq.tv_sec  = 0;
-        timereq.tv_nsec = throttle_msec * 1000000;
+        timereq.tv_sec  = throttle_msec / 1000;
+        timereq.tv_nsec = (throttle_msec % 1000) * 1000000;
 
         nanosleep (&timereq, NULL);
       }
