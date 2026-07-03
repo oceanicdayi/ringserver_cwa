@@ -629,8 +629,11 @@ HandleNegotiation (ClientInfo *cinfo, CmdToken *cmd)
     /* MATCH with no size argument removes current match */
     if (cmd->argc == 1)
     {
+      /* Swap the shared pointer under cthreads_lock */
+      pthread_mutex_lock (&param.cthreads_lock);
       free (cinfo->matchstr);
       cinfo->matchstr = NULL;
+      pthread_mutex_unlock (&param.cthreads_lock);
       RingMatch (cinfo->reader, 0);
 
       selected = SelectedStreams (cinfo->reader);
@@ -662,24 +665,31 @@ HandleNegotiation (ClientInfo *cinfo, CmdToken *cmd)
     {
       size = (size_t)size_u64;
 
-      free (cinfo->matchstr);
-      cinfo->matchstr = NULL;
-
-      /* Read regex of size bytes from socket */
-      if (!(cinfo->matchstr = (char *)malloc (size + 1)))
+      /* Receive the regex into a private buffer first, then publish it by
+       * swapping the shared cinfo->matchstr pointer under cthreads_lock.  The
+       * INFO CONNECTIONS reader dereferences matchstr while holding that lock,
+       * so the blocking RecvData must not run under it. */
+      char *newmatch;
+      if (!(newmatch = (char *)malloc (size + 1)))
       {
         lprintf (0, "[%s] Error allocating memory", cinfo->hostname);
         return -1;
       }
 
-      if (RecvData (cinfo, cinfo->matchstr, size, 1) < 0)
+      if (RecvData (cinfo, newmatch, size, 1) < 0)
       {
         lprintf (0, "[%s] Error Recv'ing data", cinfo->hostname);
+        free (newmatch);
         return -1;
       }
 
       /* Make sure buffer is a terminated string */
-      cinfo->matchstr[size] = '\0';
+      newmatch[size] = '\0';
+
+      pthread_mutex_lock (&param.cthreads_lock);
+      free (cinfo->matchstr);
+      cinfo->matchstr = newmatch;
+      pthread_mutex_unlock (&param.cthreads_lock);
 
       /* Compile match expression */
       if (RingMatch (cinfo->reader, cinfo->matchstr))
@@ -705,8 +715,11 @@ HandleNegotiation (ClientInfo *cinfo, CmdToken *cmd)
     /* REJECT with no size argument removes current reject */
     if (cmd->argc == 1)
     {
+      /* Swap the shared pointer under cthreads_lock */
+      pthread_mutex_lock (&param.cthreads_lock);
       free (cinfo->rejectstr);
       cinfo->rejectstr = NULL;
+      pthread_mutex_unlock (&param.cthreads_lock);
       RingReject (cinfo->reader, 0);
 
       selected = SelectedStreams (cinfo->reader);
@@ -738,24 +751,31 @@ HandleNegotiation (ClientInfo *cinfo, CmdToken *cmd)
     {
       size = (size_t)size_u64;
 
-      free (cinfo->rejectstr);
-      cinfo->rejectstr = NULL;
-
-      /* Read regex of size bytes from socket */
-      if (!(cinfo->rejectstr = (char *)malloc (size + 1)))
+      /* Receive the regex into a private buffer first, then publish it by
+       * swapping the shared cinfo->rejectstr pointer under cthreads_lock.  The
+       * INFO CONNECTIONS reader dereferences rejectstr while holding that lock,
+       * so the blocking RecvData must not run under it. */
+      char *newreject;
+      if (!(newreject = (char *)malloc (size + 1)))
       {
         lprintf (0, "[%s] Error allocating memory", cinfo->hostname);
         return -1;
       }
 
-      if (RecvData (cinfo, cinfo->rejectstr, size, 1) < 0)
+      if (RecvData (cinfo, newreject, size, 1) < 0)
       {
         lprintf (0, "[%s] Error Recv'ing data", cinfo->hostname);
+        free (newreject);
         return -1;
       }
 
       /* Make sure buffer is a terminated string */
-      cinfo->rejectstr[size] = '\0';
+      newreject[size] = '\0';
+
+      pthread_mutex_lock (&param.cthreads_lock);
+      free (cinfo->rejectstr);
+      cinfo->rejectstr = newreject;
+      pthread_mutex_unlock (&param.cthreads_lock);
 
       /* Compile reject expression */
       if (RingReject (cinfo->reader, cinfo->rejectstr))
