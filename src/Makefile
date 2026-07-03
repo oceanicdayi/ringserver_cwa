@@ -18,10 +18,6 @@ MINIZ_OBJS   = $(wildcard ../miniz/*.o)
 FEATURE_DEFS = -D_GNU_SOURCE -D_DARWIN_C_SOURCE \
                -D_REENTRANT -D_POSIX_PTHREAD_SEMANTICS
 
-# Miniz build options — disable unused ZIP/stdio/time/zlib-compatible defines
-MINIZ_DEFS = -DMINIZ_NO_ARCHIVE_APIS -DMINIZ_NO_STDIO -DMINIZ_NO_TIME \
-             -DMINIZ_NO_ZLIB_COMPATIBLE_NAMES
-
 INCLUDES = -I../libmseed -I../mxml -I../pcre2/src -I../mbedtls/include -I../miniz
 
 CFLAGS += -std=c11 $(FEATURE_DEFS) $(MINIZ_DEFS) $(INCLUDES)

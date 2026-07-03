@@ -3,6 +3,9 @@
 #   CC : Specify the C compiler to use
 #   CFLAGS : Specify compiler options to use
 
+# Default to -O2 optimization level
+export CFLAGS ?= -O2
+
 SUBDIRS = pcre2 mxml libmseed mbedtls miniz
 BUILDDIRS = $(SUBDIRS) src
 

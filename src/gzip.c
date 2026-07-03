@@ -23,6 +23,13 @@
  **************************************************************************/
 
 #include "gzip.h"
+
+/* Miniz build options — disable unused ZIP/stdio/time/zlib-compatible defines */
+#define MINIZ_NO_ARCHIVE_APIS
+#define MINIZ_NO_STDIO
+#define MINIZ_NO_TIME
+#define MINIZ_NO_ZLIB_COMPATIBLE_NAMES
+
 #include "miniz.h"
 
 #include <limits.h>
