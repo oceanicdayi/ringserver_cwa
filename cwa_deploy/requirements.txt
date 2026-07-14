@@ -1,2 +1,3 @@
 datalink-client>=1.4.0
-gradio>=6.20.0
+# Gradio is installed by Hugging Face Spaces from README sdk_version.
+# For local runs: pip install "gradio==6.20.0"
