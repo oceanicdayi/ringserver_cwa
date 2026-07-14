@@ -1,6 +1,6 @@
-# Event JSON streaming with ringserver (Python)
+# CWA event JSON streaming (Python)
 
-Minimal example: publish and subscribe to earthquake event JSON over DataLink.
+Earthquake event JSON publish/subscribe over ringserver DataLink.
 
 ## 1. Build ringserver
 
@@ -15,9 +15,9 @@ make
 Run from this directory so the relative `RingDirectory ring` resolves correctly:
 
 ```bash
-cd examples/event-json
+cd cwa_deploy
 mkdir -p ring
-../../ringserver ring-event.conf
+../ringserver ring-event.conf
 ```
 
 Ports:
@@ -28,7 +28,7 @@ Ports:
 ## 3. Install Python client
 
 ```bash
-cd examples/event-json
+cd cwa_deploy
 python3 -m pip install -r requirements.txt
 ```
 
