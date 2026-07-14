@@ -1,66 +1,67 @@
-# CWA event JSON streaming (Python)
+---
+title: Ringserver Cwa
+emoji: 💻
+colorFrom: indigo
+colorTo: gray
+sdk: gradio
+sdk_version: 6.20.0
+python_version: "3.13"
+app_file: app.py
+pinned: false
+license: apache-2.0
+short_description: Event JSON publish/subscribe for ringserver
+---
 
-Earthquake event JSON publish/subscribe over ringserver DataLink.
+# Ringserver CWA — Event JSON Client
 
-## 1. Build ringserver
+Gradio client for earthquake **event JSON** streaming via ringserver DataLink.
 
-From the repository root:
+Space: https://huggingface.co/spaces/oceanicdayi/Ringserver_cwa
 
-```bash
-make
-```
+## Features
 
-## 2. Start ringserver
+- **Publish** event JSON to a stream (default `TW_DEMO_EVENT/JSON`)
+- **Subscribe / fetch** matching `/JSON` packets
+- **Server status** via HTTP `/id/json` and `/streams/json`
 
-Run from this directory so the relative `RingDirectory ring` resolves correctly:
-
-```bash
-cd cwa_deploy
-mkdir -p ring
-../ringserver ring-event.conf
-```
-
-Ports:
-
-- `16000` — DataLink (publish / subscribe)
-- `18000` — DataLink + HTTP (`/streams/json`, WebSocket `/datalink`)
-
-## 3. Install Python client
+## Local Gradio
 
 ```bash
 cd cwa_deploy
 python3 -m pip install -r requirements.txt
+python3 app.py
 ```
 
-## 4. Subscribe
+## Local CLI (optional)
 
 ```bash
-python3 subscribe_events.py --match '.*/JSON'
-```
+# start ringserver from this directory
+mkdir -p ring
+../ringserver ring-event.conf
 
-## 5. Publish a demo event
-
-In another terminal (same directory):
-
-```bash
+python3 subscribe_events.py
 python3 publish_event.py
-# or publish your own JSON file:
-python3 publish_event.py --payload my-event.json
 ```
 
-The subscriber should print the event immediately.
+## Deploy / update Hugging Face Space
 
-## Stream ID convention
+Requires a Hugging Face write token (`HF_TOKEN`):
 
-Use a `/JSON` suffix, for example:
+```bash
+export HF_TOKEN=hf_xxx
+python3 deploy_hf_space.py
+```
 
-- `TW_DEMO_EVENT/JSON`
-- `TW_CWB_INTENSITY/JSON`
+Or:
 
-Clients typically match with `.*/JSON`.
+```bash
+huggingface-cli upload oceanicdayi/Ringserver_cwa . \
+  --repo-type=space \
+  --commit-message "Update Gradio event JSON client"
+```
 
 ## Notes
 
-- Increase `MaxPacketSize` if your event JSON exceeds the configured limit (this example uses 65536).
-- SeedLink clients will not receive these packets; use DataLink.
-- ringserver transports opaque payloads; schema validation belongs in your publishers/subscribers.
+- On Hugging Face, set a **public** ringserver host; `localhost` will not reach your private server.
+- Ensure ringserver `MaxPacketSize` is large enough for event JSON.
+- DataLink writers must be allowed via `WriteIP` / auth.

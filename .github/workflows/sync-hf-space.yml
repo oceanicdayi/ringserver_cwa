@@ -1,0 +1,23 @@
+name: Sync cwa_deploy to Hugging Face Space
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "cwa_deploy/**"
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Upload Space files
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          SKIP_IF_NO_TOKEN: "1"
+        run: |
+          python3 -m pip install --upgrade huggingface_hub
+          cd cwa_deploy
+          python3 deploy_hf_space.py
