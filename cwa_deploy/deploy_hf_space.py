@@ -68,6 +68,11 @@ def main() -> int:
             commit_message="Deploy Gradio event JSON client for ringserver CWA",
         )
 
+    # Force a clean rebuild/start when the Space is stuck initializing.
+    print(f"Factory-rebooting space {SPACE_ID} ...")
+    runtime = api.restart_space(repo_id=SPACE_ID, factory_reboot=True)
+    print(f"Restart requested; stage={getattr(runtime, 'stage', runtime)}")
+
     print(f"Done. Open https://huggingface.co/spaces/{SPACE_ID}")
     return 0
 
