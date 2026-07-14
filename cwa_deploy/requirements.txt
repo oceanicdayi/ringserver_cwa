@@ -1,2 +1,2 @@
-# Keep empty / minimal while validating Space boot.
-# datalink-client will be re-added after the Space reaches RUNNING.
+datalink-client>=1.4.0
+huggingface_hub>=0.26.0,<1.0.0
