@@ -4,7 +4,7 @@ emoji: 💻
 colorFrom: indigo
 colorTo: gray
 sdk: gradio
-sdk_version: 6.20.0
+sdk_version: 5.50.0
 python_version: "3.12"
 app_file: app.py
 pinned: false
@@ -28,7 +28,7 @@ Space: https://huggingface.co/spaces/oceanicdayi/Ringserver_cwa
 
 ```bash
 cd cwa_deploy
-python3 -m pip install -r requirements.txt
+python3 -m pip install -r requirements.txt "gradio==5.50.0"
 python3 app.py
 ```
 
