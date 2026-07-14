@@ -1,1 +1,2 @@
-datalink-client>=1.4.0
+# Keep empty / minimal while validating Space boot.
+# datalink-client will be re-added after the Space reaches RUNNING.
